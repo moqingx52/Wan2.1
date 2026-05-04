@@ -11,12 +11,17 @@ from pipeline.manifest import build_manifest
 from pipeline.pack import pack_submission
 from pipeline.paths import PipelinePaths
 from pipeline.prompts import build_prompts
+from pipeline.defaults import WAN_SAMPLE_STEPS_DEFAULT
 from pipeline.validate import validate_submission
 
 
 def _add_generate_memory_args(p: argparse.ArgumentParser) -> None:
-    """Defaults tuned for 14B 720P I2V on multi-GPU (offload + T5 CPU + fewer steps)."""
-    p.set_defaults(offload_model=True, t5_cpu=True, t5_fsdp=True)
+    """Defaults tuned for 14B 720P I2V on multi-GPU (offload + T5 CPU + fewer steps).
+
+    By default we do not pass --t5_fsdp when using torchrun: with --t5_cpu it is often
+    redundant and can add overhead/OOM risk; pass --t5-fsdp to enable it if needed.
+    """
+    p.set_defaults(offload_model=True, t5_cpu=True, t5_fsdp=False)
     p.add_argument(
         "--no-offload-model",
         dest="offload_model",
@@ -30,17 +35,26 @@ def _add_generate_memory_args(p: argparse.ArgumentParser) -> None:
         help="Omit --t5_cpu (keep T5 on GPU; higher VRAM).",
     )
     p.add_argument(
+        "--t5-fsdp",
+        dest="t5_fsdp",
+        action="store_true",
+        help="Add --t5_fsdp with torchrun (off by default; use if stable and not OOM).",
+    )
+    p.add_argument(
         "--no-t5-fsdp",
         dest="t5_fsdp",
         action="store_false",
-        help="Omit --t5_fsdp with torchrun (try if still OOM with t5_cpu).",
+        help="Same as default now; kept for scripts that already pass this flag.",
     )
     p.add_argument(
         "--sample-steps",
         type=int,
-        default=30,
+        default=WAN_SAMPLE_STEPS_DEFAULT,
         metavar="N",
-        help="I2V sampling steps (default 30; Wan I2V default is 40).",
+        help=(
+            f"I2V sampling steps (default {WAN_SAMPLE_STEPS_DEFAULT}; "
+            "Wan I2V default is 40)."
+        ),
     )
 
 

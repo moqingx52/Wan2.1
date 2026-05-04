@@ -46,7 +46,7 @@ def generate_batch(
     offload_model: bool = True,
     t5_cpu: bool = True,
     sample_steps: int = WAN_SAMPLE_STEPS_DEFAULT,
-    t5_fsdp: bool = True,
+    t5_fsdp: bool = False,
 ) -> None:
     manifest = paths.manifest_path()
     if not manifest.exists():

@@ -13,7 +13,8 @@ START_FRAME_INDEX = 15
 WAN_FRAME_NUM = 81
 
 # Lower than Wan default (40 for I2V) to save VRAM/time on 14B 720P multi-GPU runs.
-WAN_SAMPLE_STEPS_DEFAULT = 30
+# With t5_cpu=True, omitting t5_fsdp often saves VRAM; 25 steps further reduces peak usage.
+WAN_SAMPLE_STEPS_DEFAULT = 25
 
 # README: 51 predicted action/joint rows after the 16-frame prefix.
 TARGET_ACTION_ROWS = 51
