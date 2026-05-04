@@ -5,6 +5,8 @@ from __future__ import annotations
 import argparse
 import logging
 import os
+import threading
+import time
 import traceback
 from pathlib import Path
 
@@ -41,6 +43,12 @@ def _parse_args() -> argparse.Namespace:
     p.add_argument("--t5-fsdp", action="store_true", default=False)
     p.add_argument("--ulysses-size", type=int, default=1)
     p.add_argument("--ring-size", type=int, default=1)
+    p.add_argument(
+        "--heartbeat-seconds",
+        type=int,
+        default=30,
+        help="Rank0 heartbeat period while one case is generating.",
+    )
     return p.parse_args()
 
 
@@ -84,6 +92,32 @@ def _setup_ulysses_if_needed(args: argparse.Namespace, world_size: int) -> None:
 def _default_sample_shift(size: str) -> float:
     # Match generate.py behavior for i2v.
     return 3.0 if size in ("832*480", "480*832") else 5.0
+
+
+def _start_case_heartbeat(
+    case: str,
+    rank: int,
+    interval_s: int,
+) -> tuple[threading.Event, threading.Thread] | tuple[None, None]:
+    """Emit periodic logs while a case is in generate(). Rank0 only."""
+    if rank != 0 or interval_s <= 0:
+        return None, None
+
+    stop_event = threading.Event()
+    started = time.time()
+
+    def _beat() -> None:
+        while not stop_event.wait(interval_s):
+            elapsed = time.time() - started
+            logging.info(
+                "[CASE %s] still running generate() ... elapsed=%.1fs",
+                case,
+                elapsed,
+            )
+
+    t = threading.Thread(target=_beat, name=f"hb-{case}", daemon=True)
+    t.start()
+    return stop_event, t
 
 
 def main() -> None:
@@ -135,8 +169,29 @@ def main() -> None:
 
         try:
             c.raw_dir.mkdir(parents=True, exist_ok=True)
+            if rank == 0:
+                logging.info(
+                    "[CASE %s] start | seed=%s size=%s frame_num=%s steps=%s offload=%s t5_cpu=%s t5_fsdp=%s",
+                    c.case,
+                    args.base_seed + c.run_idx,
+                    args.wan_size,
+                    args.frame_num,
+                    args.sample_steps,
+                    args.offload_model,
+                    args.t5_cpu,
+                    args.t5_fsdp,
+                )
+                logging.info("[CASE %s] stage=load_input_image", c.case)
             img = Image.open(c.start_img).convert("RGB")
             n_prompt = c.neg_prompt or ""
+            hb_stop, hb_thread = _start_case_heartbeat(
+                case=c.case,
+                rank=rank,
+                interval_s=args.heartbeat_seconds,
+            )
+            if rank == 0:
+                logging.info("[CASE %s] stage=generate_enter", c.case)
+            t0 = time.time()
             video = wan_i2v.generate(
                 c.prompt,
                 img,
@@ -150,7 +205,14 @@ def main() -> None:
                 seed=args.base_seed + c.run_idx,
                 offload_model=args.offload_model,
             )
+            t_gen = time.time() - t0
+            if hb_stop is not None and hb_thread is not None:
+                hb_stop.set()
+                hb_thread.join(timeout=1.0)
             if rank == 0:
+                logging.info("[CASE %s] stage=generate_done elapsed=%.1fs", c.case, t_gen)
+            if rank == 0:
+                logging.info("[CASE %s] stage=save_video", c.case)
                 save_ok = cache_video(
                     tensor=video[None],
                     save_file=str(c.save_file),
@@ -162,9 +224,13 @@ def main() -> None:
                 if save_ok is None:
                     raise RuntimeError("cache_video returned None")
                 c.done_flag.write_text("ok", encoding="utf-8")
-                logging.info(f"[DONE] {c.case}")
+                logging.info("[CASE %s] stage=done", c.case)
             if dist.is_initialized():
+                if rank == 0:
+                    logging.info("[CASE %s] stage=barrier_wait", c.case)
                 dist.barrier()
+                if rank == 0:
+                    logging.info("[CASE %s] stage=barrier_done", c.case)
         except Exception:
             err = traceback.format_exc()
             if rank == 0:
