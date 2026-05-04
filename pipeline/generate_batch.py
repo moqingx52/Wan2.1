@@ -99,6 +99,17 @@ def iter_case_inputs(
     return out
 
 
+def should_skip_case(c: CaseInputs, skip_done: bool) -> tuple[bool, str]:
+    """When skip_done is enabled, skip if DONE exists OR raw.mp4 already exists."""
+    if not skip_done:
+        return False, ""
+    if c.done_flag.exists():
+        return True, "DONE"
+    if c.save_file.exists():
+        return True, "RAW_MP4"
+    return False, ""
+
+
 def launch_generate_worker(
     paths: PipelinePaths,
     ckpt_dir: Path,
@@ -200,8 +211,9 @@ def generate_batch(
     mem_suffix = _memory_cli_args(offload_model, t5_cpu, sample_steps)
 
     for c in cases:
-        if skip_done and c.done_flag.exists():
-            print(f"[SKIP] {c.case}")
+        skip, reason = should_skip_case(c, skip_done)
+        if skip:
+            print(f"[SKIP:{reason}] {c.case}")
             continue
         case = c.case
         neg_args: list[str] = (

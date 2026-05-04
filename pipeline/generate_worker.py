@@ -19,7 +19,7 @@ from wan.configs import MAX_AREA_CONFIGS, WAN_CONFIGS
 from wan.utils.utils import cache_video
 
 from pipeline.defaults import WAN_FRAME_NUM_DEFAULT, WAN_SAMPLE_STEPS_DEFAULT, WAN_SIZE_DEFAULT
-from pipeline.generate_batch import iter_case_inputs
+from pipeline.generate_batch import iter_case_inputs, should_skip_case
 from pipeline.paths import PipelinePaths
 
 
@@ -160,9 +160,10 @@ def main() -> None:
     shift = args.sample_shift if args.sample_shift is not None else _default_sample_shift(args.wan_size)
     for c in cases:
         # FSDP / USP: every rank must enter the same generate() collectives per case.
-        if args.skip_done and c.done_flag.exists():
+        skip, reason = should_skip_case(c, args.skip_done)
+        if skip:
             if rank == 0:
-                logging.info(f"[SKIP] {c.case}")
+                logging.info("[SKIP:%s] %s", reason, c.case)
             if dist.is_initialized():
                 dist.barrier()
             continue
