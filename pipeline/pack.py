@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import shutil
 from pathlib import Path
 
@@ -14,6 +15,7 @@ from pipeline.defaults import (
     OUTPUT_WIDTH,
     PRED_INDEX_START,
     TARGET_ACTION_ROWS,
+    parse_size_spec,
 )
 from pipeline.paths import PipelinePaths
 
@@ -31,21 +33,39 @@ def _read_video_frames(path: Path) -> tuple[list, float]:
     return frames, fps
 
 
-def _write_video_mp4(frames: list, path: Path, fps: float) -> None:
+def _resolve_submit_dims(
+    paths: PipelinePaths, submit_size: str | None
+) -> tuple[int, int]:
+    if submit_size:
+        return parse_size_spec(submit_size)
+    meta_path = paths.wan_generate_meta_path()
+    if meta_path.is_file():
+        data = json.loads(meta_path.read_text(encoding="utf-8"))
+        return int(data["submit_width"]), int(data["submit_height"])
+    return OUTPUT_WIDTH, OUTPUT_HEIGHT
+
+
+def _write_video_mp4(
+    frames: list,
+    path: Path,
+    fps: float,
+    out_w: int,
+    out_h: int,
+) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     fourcc = cv2.VideoWriter_fourcc(*"mp4v")
     writer = cv2.VideoWriter(
         str(path),
         fourcc,
         fps if fps > 0 else 10.0,
-        (OUTPUT_WIDTH, OUTPUT_HEIGHT),
+        (out_w, out_h),
     )
     for f in frames:
-        if f.shape[1] != OUTPUT_WIDTH or f.shape[0] != OUTPUT_HEIGHT:
+        if f.shape[1] != out_w or f.shape[0] != out_h:
             f = cv2.resize(
                 f,
-                (OUTPUT_WIDTH, OUTPUT_HEIGHT),
-                interpolation=cv2.INTER_AREA,
+                (out_w, out_h),
+                interpolation=cv2.INTER_CUBIC,
             )
         writer.write(f)
     writer.release()
@@ -65,7 +85,11 @@ def fix_index_csv(src: Path, dst: Path, start_index: int, target_len: int) -> No
     df.to_csv(dst, index=False)
 
 
-def pack_submission(paths: PipelinePaths, case_filter: str | None = None) -> Path:
+def pack_submission(
+    paths: PipelinePaths,
+    case_filter: str | None = None,
+    submit_size: str | None = None,
+) -> Path:
     manifest = paths.manifest_path()
     meta_path = paths.video_meta_path()
     if not manifest.exists():
@@ -74,6 +98,8 @@ def pack_submission(paths: PipelinePaths, case_filter: str | None = None) -> Pat
         raise FileNotFoundError(
             f"Run `extract` first for FPS meta: missing {meta_path}"
         )
+
+    submit_w, submit_h = _resolve_submit_dims(paths, submit_size)
 
     df = pd.read_csv(manifest)
     meta = pd.read_csv(meta_path)
@@ -109,7 +135,13 @@ def pack_submission(paths: PipelinePaths, case_filter: str | None = None) -> Pat
         out_dir = out_root / case
         out_dir.mkdir(parents=True, exist_ok=True)
 
-        _write_video_mp4(future_frames[:50], out_dir / "video.mp4", fps=fps)
+        _write_video_mp4(
+            future_frames[:50],
+            out_dir / "video.mp4",
+            fps=fps,
+            out_w=submit_w,
+            out_h=submit_h,
+        )
 
         instr_src = Path(row["instruction_path"])
         shutil.copyfile(instr_src, out_dir / "instructions.txt")

@@ -23,6 +23,10 @@ class PipelinePaths:
     def video_meta_path(self) -> Path:
         return self.work_dir / "meta" / "video_meta.csv"
 
+    def wan_generate_meta_path(self) -> Path:
+        """Written by extract; read by pack for submit resolution (and optional fallbacks)."""
+        return self.work_dir / "meta" / "wan_generate.json"
+
     def start_frames_dir(self) -> Path:
         return self.work_dir / "start_frames"
 

@@ -10,7 +10,12 @@ from pathlib import Path
 
 import pandas as pd
 
-from pipeline.defaults import WAN_FRAME_NUM, WAN_SAMPLE_STEPS_DEFAULT
+from pipeline.defaults import (
+    WAN_FRAME_NUM_DEFAULT,
+    WAN_SAMPLE_STEPS_DEFAULT,
+    WAN_SIZE_DEFAULT,
+    assert_frame_num_for_pack,
+)
 from pipeline.paths import PipelinePaths
 
 
@@ -47,7 +52,11 @@ def generate_batch(
     t5_cpu: bool = True,
     sample_steps: int = WAN_SAMPLE_STEPS_DEFAULT,
     t5_fsdp: bool = False,
+    wan_size: str = WAN_SIZE_DEFAULT,
+    frame_num: int = WAN_FRAME_NUM_DEFAULT,
 ) -> None:
+    assert_frame_num_for_pack(frame_num)
+
     manifest = paths.manifest_path()
     if not manifest.exists():
         raise FileNotFoundError(f"Run `manifest` first: missing {manifest}")
@@ -100,7 +109,7 @@ def generate_batch(
                 "--task",
                 "i2v-14B",
                 "--size",
-                "1280*720",
+                wan_size,
                 "--ckpt_dir",
                 str(ckpt_dir),
                 "--image",
@@ -108,7 +117,7 @@ def generate_batch(
                 "--prompt",
                 prompt,
                 "--frame_num",
-                str(WAN_FRAME_NUM),
+                str(frame_num),
                 "--save_file",
                 str(save_file),
                 "--base_seed",
@@ -126,7 +135,7 @@ def generate_batch(
                 "--task",
                 "i2v-14B",
                 "--size",
-                "1280*720",
+                wan_size,
                 "--ckpt_dir",
                 str(ckpt_dir),
                 "--image",
@@ -134,7 +143,7 @@ def generate_batch(
                 "--prompt",
                 prompt,
                 "--frame_num",
-                str(WAN_FRAME_NUM),
+                str(frame_num),
                 "--save_file",
                 str(save_file),
                 "--dit_fsdp",

@@ -11,12 +11,46 @@ from pipeline.manifest import build_manifest
 from pipeline.pack import pack_submission
 from pipeline.paths import PipelinePaths
 from pipeline.prompts import build_prompts
-from pipeline.defaults import WAN_SAMPLE_STEPS_DEFAULT
+from pipeline.defaults import (
+    WAN_FRAME_NUM_DEFAULT,
+    WAN_SAMPLE_STEPS_DEFAULT,
+    WAN_SIZE_DEFAULT,
+)
 from pipeline.validate import validate_submission
 
 
+def _add_wan_shape_args(p: argparse.ArgumentParser) -> None:
+    p.add_argument(
+        "--wan-size",
+        type=str,
+        default=WAN_SIZE_DEFAULT,
+        metavar="WxH",
+        help=(
+            "Wan generate.py --size (e.g. 832*480 with Wan2.1-I2V-14B-480P; "
+            "1280*720 with 720P ckpt). Start frames are resized to match."
+        ),
+    )
+    p.add_argument(
+        "--submit-size",
+        type=str,
+        default="1280*720",
+        metavar="WxH",
+        help="Pack output video resolution (upscale raw with INTER_CUBIC).",
+    )
+    p.add_argument(
+        "--frame-num",
+        type=int,
+        default=WAN_FRAME_NUM_DEFAULT,
+        metavar="N",
+        help=(
+            "Wan --frame_num (must be 4n+1 and >=51). Default 53 for lighter 480P runs; "
+            "use 81 with 720P."
+        ),
+    )
+
+
 def _add_generate_memory_args(p: argparse.ArgumentParser) -> None:
-    """Defaults tuned for 14B 720P I2V on multi-GPU (offload + T5 CPU + fewer steps).
+    """Defaults tuned for 14B I2V on multi-GPU (offload + T5 CPU + fewer steps).
 
     By default we do not pass --t5_fsdp when using torchrun: with --t5_cpu it is often
     redundant and can add overhead/OOM risk; pass --t5-fsdp to enable it if needed.
@@ -112,7 +146,13 @@ def cmd_manifest(args: argparse.Namespace) -> None:
 
 def cmd_extract(args: argparse.Namespace) -> None:
     paths = _paths(args)
-    out = extract_start_frames(paths, case_filter=args.case)
+    out = extract_start_frames(
+        paths,
+        case_filter=args.case,
+        wan_size=args.wan_size,
+        submit_size=args.submit_size,
+        frame_num=args.frame_num,
+    )
     print(out)
 
 
@@ -136,12 +176,18 @@ def cmd_generate(args: argparse.Namespace) -> None:
         t5_cpu=args.t5_cpu,
         sample_steps=args.sample_steps,
         t5_fsdp=args.t5_fsdp,
+        wan_size=args.wan_size,
+        frame_num=args.frame_num,
     )
 
 
 def cmd_pack(args: argparse.Namespace) -> None:
     paths = _paths(args)
-    out = pack_submission(paths, case_filter=args.case)
+    out = pack_submission(
+        paths,
+        case_filter=args.case,
+        submit_size=args.submit_size,
+    )
     print(out)
 
 
@@ -182,6 +228,7 @@ def main() -> None:
 
     p_ext = sub.add_parser("extract", help="Extract frame 16 PNGs + meta/video_meta.csv")
     _add_common(p_ext)
+    _add_wan_shape_args(p_ext)
     p_ext.set_defaults(func=cmd_extract)
 
     p_pr = sub.add_parser("prompts", help="Write prompts/*.txt from instructions")
@@ -194,7 +241,7 @@ def main() -> None:
         "--ckpt-dir",
         type=str,
         required=True,
-        help="Wan2.1-I2V-14B-720P checkpoint directory.",
+        help="Checkpoint dir (e.g. Wan2.1-I2V-14B-480P for --wan-size 832*480, or 720P ckpt).",
     )
     p_gen.add_argument(
         "--nproc",
@@ -209,11 +256,22 @@ def main() -> None:
         help="Re-run even if raw/<case>/DONE exists.",
     )
     p_gen.add_argument("--sample-guide-scale", type=float, default=5.0)
+    _add_wan_shape_args(p_gen)
     _add_generate_memory_args(p_gen)
     p_gen.set_defaults(func=cmd_generate)
 
     p_pack = sub.add_parser("pack", help="Slice 50 frames + RDT CSVs into out-dir")
     _add_common(p_pack)
+    p_pack.add_argument(
+        "--submit-size",
+        type=str,
+        default=None,
+        metavar="WxH",
+        help=(
+            "Output video WxH (default: read meta/wan_generate.json from extract, "
+            "else 1280*720)."
+        ),
+    )
     p_pack.set_defaults(func=cmd_pack)
 
     p_val = sub.add_parser("validate", help="Check out-dir submission format")
@@ -239,6 +297,7 @@ def main() -> None:
     p_all.add_argument("--base-seed", type=int, default=2026)
     p_all.add_argument("--no-skip-done", action="store_true")
     p_all.add_argument("--sample-guide-scale", type=float, default=5.0)
+    _add_wan_shape_args(p_all)
     _add_generate_memory_args(p_all)
     p_all.add_argument(
         "--allow-missing-rdt",
