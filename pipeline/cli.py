@@ -6,7 +6,7 @@ import argparse
 from pathlib import Path
 
 from pipeline.extract_frame import extract_start_frames
-from pipeline.generate_batch import generate_batch
+from pipeline.generate_batch import generate_batch, launch_generate_worker
 from pipeline.manifest import build_manifest
 from pipeline.pack import pack_submission
 from pipeline.paths import PipelinePaths
@@ -164,7 +164,8 @@ def cmd_prompts(args: argparse.Namespace) -> None:
 
 def cmd_generate(args: argparse.Namespace) -> None:
     paths = _paths(args)
-    generate_batch(
+    runner = generate_batch if args.legacy_per_case else launch_generate_worker
+    runner(
         paths,
         ckpt_dir=Path(args.ckpt_dir).resolve(),
         case_filter=args.case,
@@ -256,6 +257,11 @@ def main() -> None:
         help="Re-run even if raw/<case>/DONE exists.",
     )
     p_gen.add_argument("--sample-guide-scale", type=float, default=5.0)
+    p_gen.add_argument(
+        "--legacy-per-case",
+        action="store_true",
+        help="Fallback to old behavior: spawn one process per case.",
+    )
     _add_wan_shape_args(p_gen)
     _add_generate_memory_args(p_gen)
     p_gen.set_defaults(func=cmd_generate)
@@ -297,6 +303,11 @@ def main() -> None:
     p_all.add_argument("--base-seed", type=int, default=2026)
     p_all.add_argument("--no-skip-done", action="store_true")
     p_all.add_argument("--sample-guide-scale", type=float, default=5.0)
+    p_all.add_argument(
+        "--legacy-per-case",
+        action="store_true",
+        help="Fallback to old per-case spawn path for generate stage.",
+    )
     _add_wan_shape_args(p_all)
     _add_generate_memory_args(p_all)
     p_all.add_argument(
