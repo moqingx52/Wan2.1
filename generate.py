@@ -243,12 +243,28 @@ def _parse_args():
         type=float,
         default=5.0,
         help="Classifier free guidance scale.")
+    parser.add_argument(
+        "--sample_neg_prompt",
+        type=str,
+        default=None,
+        help=(
+            "Negative prompt for classifier-free guidance. "
+            "If omitted, use each task checkpoint default (sample_neg_prompt in config)."
+        ),
+    )
 
     args = parser.parse_args()
 
     _validate_args(args)
 
     return args
+
+
+def _n_prompt_cli(args):
+    """Empty string means Wan*.generate uses config default; explicit text overrides."""
+    if getattr(args, "sample_neg_prompt", None) is None:
+        return ""
+    return args.sample_neg_prompt
 
 
 def _init_logging(rank):
@@ -378,6 +394,7 @@ def generate(args):
             sample_solver=args.sample_solver,
             sampling_steps=args.sample_steps,
             guide_scale=args.sample_guide_scale,
+            n_prompt=_n_prompt_cli(args),
             seed=args.base_seed,
             offload_model=args.offload_model)
 
@@ -435,6 +452,7 @@ def generate(args):
             sample_solver=args.sample_solver,
             sampling_steps=args.sample_steps,
             guide_scale=args.sample_guide_scale,
+            n_prompt=_n_prompt_cli(args),
             seed=args.base_seed,
             offload_model=args.offload_model)
     elif "flf2v" in args.task:
@@ -494,6 +512,7 @@ def generate(args):
             sample_solver=args.sample_solver,
             sampling_steps=args.sample_steps,
             guide_scale=args.sample_guide_scale,
+            n_prompt=_n_prompt_cli(args),
             seed=args.base_seed,
             offload_model=args.offload_model)
     elif "vace" in args.task:
@@ -549,6 +568,7 @@ def generate(args):
             sample_solver=args.sample_solver,
             sampling_steps=args.sample_steps,
             guide_scale=args.sample_guide_scale,
+            n_prompt=_n_prompt_cli(args),
             seed=args.base_seed,
             offload_model=args.offload_model)
     else:

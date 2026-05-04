@@ -62,6 +62,11 @@ def generate_batch(
             raise FileNotFoundError(prompt_file)
 
         prompt = _read_text(prompt_file)
+        neg_file = prompts_dir / f"{case}.negative.txt"
+        neg_args: list[str] = []
+        if neg_file.is_file():
+            neg_args = ["--sample_neg_prompt", _read_text(neg_file)]
+
         log_path = case_raw / "generate.log"
 
         cmd: list[str]
@@ -88,6 +93,7 @@ def generate_batch(
                 "--sample_guide_scale",
                 str(sample_guide_scale),
             ]
+            cmd.extend(neg_args)
         else:
             cmd = [
                 "torchrun",
@@ -116,6 +122,7 @@ def generate_batch(
                 "--sample_guide_scale",
                 str(sample_guide_scale),
             ]
+            cmd.extend(neg_args)
 
         print("[RUN]", case)
         print(shlex.join(cmd))

@@ -9,7 +9,11 @@ import pandas as pd
 from pipeline.paths import PipelinePaths, resolve_instruction_file
 
 
-def build_manifest(paths: PipelinePaths, case_filter: str | None = None) -> Path:
+def build_manifest(
+    paths: PipelinePaths,
+    case_filter: str | None = None,
+    allow_missing_rdt: bool = False,
+) -> Path:
     paths.work_dir.mkdir(parents=True, exist_ok=True)
     rows: list[dict] = []
 
@@ -36,6 +40,17 @@ def build_manifest(paths: PipelinePaths, case_filter: str | None = None) -> Path
         rdt_case = paths.rdt_root / case
         rdt_action = rdt_case / "action.txt"
         rdt_joint = rdt_case / "joint.txt"
+
+        if not rdt_action.is_file() or not rdt_joint.is_file():
+            msg = (
+                f"[{case}] missing RDT files under {rdt_case}: "
+                f"action.txt exists={rdt_action.is_file()}, "
+                f"joint.txt exists={rdt_joint.is_file()}"
+            )
+            if allow_missing_rdt:
+                print("WARNING:", msg)
+            else:
+                raise FileNotFoundError(msg)
 
         rows.append(
             {

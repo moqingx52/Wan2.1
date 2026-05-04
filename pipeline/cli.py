@@ -58,7 +58,11 @@ def _add_common(p: argparse.ArgumentParser) -> None:
 
 def cmd_manifest(args: argparse.Namespace) -> None:
     paths = _paths(args)
-    out = build_manifest(paths, case_filter=args.case)
+    out = build_manifest(
+        paths,
+        case_filter=args.case,
+        allow_missing_rdt=args.allow_missing_rdt,
+    )
     print(out)
 
 
@@ -94,7 +98,11 @@ def cmd_pack(args: argparse.Namespace) -> None:
 
 
 def cmd_validate(args: argparse.Namespace) -> None:
-    bad = validate_submission(Path(args.out_dir).resolve())
+    expected = None if args.expected_cases == 0 else args.expected_cases
+    bad = validate_submission(
+        Path(args.out_dir).resolve(),
+        expected_case_count=expected,
+    )
     if bad:
         for case, field, msg in bad:
             print(f"[FAIL] {case or '.'} {field}: {msg}")
@@ -117,6 +125,11 @@ def main() -> None:
 
     p_man = sub.add_parser("manifest", help="Create work-dir/manifest.csv")
     _add_common(p_man)
+    p_man.add_argument(
+        "--allow-missing-rdt",
+        action="store_true",
+        help="Warn only if RDT action.txt/joint.txt are missing (default: fail).",
+    )
     p_man.set_defaults(func=cmd_manifest)
 
     p_ext = sub.add_parser("extract", help="Extract frame 16 PNGs + meta/video_meta.csv")
@@ -161,6 +174,13 @@ def main() -> None:
         required=True,
         help="Submission root to validate.",
     )
+    p_val.add_argument(
+        "--expected-cases",
+        type=int,
+        default=100,
+        metavar="N",
+        help="Require exactly N case subdirs (default 100). Use 0 to skip.",
+    )
     p_val.set_defaults(func=cmd_validate)
 
     p_all = sub.add_parser("all", help="manifest → extract → prompts → generate → pack → validate")
@@ -170,6 +190,18 @@ def main() -> None:
     p_all.add_argument("--base-seed", type=int, default=2026)
     p_all.add_argument("--no-skip-done", action="store_true")
     p_all.add_argument("--sample-guide-scale", type=float, default=5.0)
+    p_all.add_argument(
+        "--allow-missing-rdt",
+        action="store_true",
+        help="Passed through to manifest.",
+    )
+    p_all.add_argument(
+        "--expected-cases",
+        type=int,
+        default=100,
+        metavar="N",
+        help="Passed through to validate (0 = skip case count).",
+    )
     p_all.set_defaults(func=cmd_all)
 
     args = parser.parse_args()

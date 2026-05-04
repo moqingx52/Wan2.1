@@ -24,6 +24,7 @@ def validate_submission(
     expected_height: int = OUTPUT_HEIGHT,
     expected_video_frames: int = 50,
     expected_csv_rows: int = TARGET_ACTION_ROWS,
+    expected_case_count: int | None = 100,
 ) -> list[tuple[str, str, str]]:
     """Return list of (case, field, message) for problems; empty if OK."""
     bad: list[tuple[str, str, str]] = []
@@ -32,6 +33,15 @@ def validate_submission(
         return [("", "", f"not a directory: {out_dir}")]
 
     case_dirs = sorted(p for p in out_dir.iterdir() if p.is_dir())
+
+    if expected_case_count is not None and len(case_dirs) != expected_case_count:
+        bad.append(
+            (
+                "",
+                "case_count",
+                f"cases={len(case_dirs)}, expected={expected_case_count}",
+            )
+        )
 
     for d in case_dirs:
         name = d.name
