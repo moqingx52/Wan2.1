@@ -10,12 +10,29 @@ from pathlib import Path
 
 import pandas as pd
 
-from pipeline.defaults import WAN_FRAME_NUM
+from pipeline.defaults import WAN_FRAME_NUM, WAN_SAMPLE_STEPS_DEFAULT
 from pipeline.paths import PipelinePaths
 
 
 def _read_text(path: Path) -> str:
     return path.read_text(encoding="utf-8", errors="ignore").strip()
+
+
+def _memory_cli_args(
+    offload_model: bool,
+    t5_cpu: bool,
+    sample_steps: int,
+) -> list[str]:
+    """Extra flags passed to generate.py (str2bool expects strings from CLI)."""
+    parts = [
+        "--offload_model",
+        "true" if offload_model else "false",
+        "--sample_steps",
+        str(sample_steps),
+    ]
+    if t5_cpu:
+        parts.append("--t5_cpu")
+    return parts
 
 
 def generate_batch(
@@ -26,6 +43,10 @@ def generate_batch(
     base_seed: int = 2026,
     skip_done: bool = True,
     sample_guide_scale: float = 5.0,
+    offload_model: bool = True,
+    t5_cpu: bool = True,
+    sample_steps: int = WAN_SAMPLE_STEPS_DEFAULT,
+    t5_fsdp: bool = True,
 ) -> None:
     manifest = paths.manifest_path()
     if not manifest.exists():
@@ -42,6 +63,8 @@ def generate_batch(
 
     prompts_dir = paths.prompts_dir()
     start_dir = paths.start_frames_dir()
+
+    mem_suffix = _memory_cli_args(offload_model, t5_cpu, sample_steps)
 
     for run_idx, (_, row) in enumerate(df.iterrows()):
         case = row["case"]
@@ -93,6 +116,7 @@ def generate_batch(
                 "--sample_guide_scale",
                 str(sample_guide_scale),
             ]
+            cmd.extend(mem_suffix)
             cmd.extend(neg_args)
         else:
             cmd = [
@@ -114,14 +138,20 @@ def generate_batch(
                 "--save_file",
                 str(save_file),
                 "--dit_fsdp",
-                "--t5_fsdp",
-                "--ulysses_size",
-                str(nproc),
-                "--base_seed",
-                str(base_seed + run_idx),
-                "--sample_guide_scale",
-                str(sample_guide_scale),
             ]
+            if t5_fsdp:
+                cmd.append("--t5_fsdp")
+            cmd.extend(
+                [
+                    "--ulysses_size",
+                    str(nproc),
+                    "--base_seed",
+                    str(base_seed + run_idx),
+                    "--sample_guide_scale",
+                    str(sample_guide_scale),
+                ]
+            )
+            cmd.extend(mem_suffix)
             cmd.extend(neg_args)
 
         print("[RUN]", case)

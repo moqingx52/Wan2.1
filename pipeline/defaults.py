@@ -12,6 +12,9 @@ START_FRAME_INDEX = 15
 # Wan I2V uses 4n+1 frame counts; 81 -> take frames[1:51] => 50 submission frames.
 WAN_FRAME_NUM = 81
 
+# Lower than Wan default (40 for I2V) to save VRAM/time on 14B 720P multi-GPU runs.
+WAN_SAMPLE_STEPS_DEFAULT = 30
+
 # README: 51 predicted action/joint rows after the 16-frame prefix.
 TARGET_ACTION_ROWS = 51
 

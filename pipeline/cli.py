@@ -14,6 +14,36 @@ from pipeline.prompts import build_prompts
 from pipeline.validate import validate_submission
 
 
+def _add_generate_memory_args(p: argparse.ArgumentParser) -> None:
+    """Defaults tuned for 14B 720P I2V on multi-GPU (offload + T5 CPU + fewer steps)."""
+    p.set_defaults(offload_model=True, t5_cpu=True, t5_fsdp=True)
+    p.add_argument(
+        "--no-offload-model",
+        dest="offload_model",
+        action="store_false",
+        help="Do not pass --offload_model true (Wan multi-GPU default is false).",
+    )
+    p.add_argument(
+        "--no-t5-cpu",
+        dest="t5_cpu",
+        action="store_false",
+        help="Omit --t5_cpu (keep T5 on GPU; higher VRAM).",
+    )
+    p.add_argument(
+        "--no-t5-fsdp",
+        dest="t5_fsdp",
+        action="store_false",
+        help="Omit --t5_fsdp with torchrun (try if still OOM with t5_cpu).",
+    )
+    p.add_argument(
+        "--sample-steps",
+        type=int,
+        default=30,
+        metavar="N",
+        help="I2V sampling steps (default 30; Wan I2V default is 40).",
+    )
+
+
 def _paths(ns: argparse.Namespace) -> PipelinePaths:
     return PipelinePaths(
         dataset_root=Path(ns.dataset_root).resolve(),
@@ -88,6 +118,10 @@ def cmd_generate(args: argparse.Namespace) -> None:
         base_seed=args.base_seed,
         skip_done=not args.no_skip_done,
         sample_guide_scale=args.sample_guide_scale,
+        offload_model=args.offload_model,
+        t5_cpu=args.t5_cpu,
+        sample_steps=args.sample_steps,
+        t5_fsdp=args.t5_fsdp,
     )
 
 
@@ -161,6 +195,7 @@ def main() -> None:
         help="Re-run even if raw/<case>/DONE exists.",
     )
     p_gen.add_argument("--sample-guide-scale", type=float, default=5.0)
+    _add_generate_memory_args(p_gen)
     p_gen.set_defaults(func=cmd_generate)
 
     p_pack = sub.add_parser("pack", help="Slice 50 frames + RDT CSVs into out-dir")
@@ -190,6 +225,7 @@ def main() -> None:
     p_all.add_argument("--base-seed", type=int, default=2026)
     p_all.add_argument("--no-skip-done", action="store_true")
     p_all.add_argument("--sample-guide-scale", type=float, default=5.0)
+    _add_generate_memory_args(p_all)
     p_all.add_argument(
         "--allow-missing-rdt",
         action="store_true",
