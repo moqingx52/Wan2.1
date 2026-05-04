@@ -90,6 +90,8 @@ def main() -> None:
     args = _parse_args()
     rank, world_size, local_rank = _setup_dist(args)
     _setup_ulysses_if_needed(args, world_size)
+    if rank == 0:
+        logging.info("Distributed world_size=%s (all ranks run each case together).", world_size)
 
     paths = PipelinePaths(
         dataset_root=Path(args.dataset_root).resolve(),
@@ -123,11 +125,12 @@ def main() -> None:
 
     shift = args.sample_shift if args.sample_shift is not None else _default_sample_shift(args.wan_size)
     for c in cases:
-        if c.run_idx % world_size != rank:
-            continue
+        # FSDP / USP: every rank must enter the same generate() collectives per case.
         if args.skip_done and c.done_flag.exists():
             if rank == 0:
                 logging.info(f"[SKIP] {c.case}")
+            if dist.is_initialized():
+                dist.barrier()
             continue
 
         try:
@@ -147,22 +150,28 @@ def main() -> None:
                 seed=args.base_seed + c.run_idx,
                 offload_model=args.offload_model,
             )
-            save_ok = cache_video(
-                tensor=video[None],
-                save_file=str(c.save_file),
-                fps=cfg.sample_fps,
-                nrow=1,
-                normalize=True,
-                value_range=(-1, 1),
-            )
-            if save_ok is None:
-                raise RuntimeError("cache_video returned None")
-            c.done_flag.write_text("ok", encoding="utf-8")
-            logging.info(f"[DONE][rank{rank}] {c.case}")
+            if rank == 0:
+                save_ok = cache_video(
+                    tensor=video[None],
+                    save_file=str(c.save_file),
+                    fps=cfg.sample_fps,
+                    nrow=1,
+                    normalize=True,
+                    value_range=(-1, 1),
+                )
+                if save_ok is None:
+                    raise RuntimeError("cache_video returned None")
+                c.done_flag.write_text("ok", encoding="utf-8")
+                logging.info(f"[DONE] {c.case}")
+            if dist.is_initialized():
+                dist.barrier()
         except Exception:
             err = traceback.format_exc()
-            c.log_path.write_text(err, encoding="utf-8")
-            logging.error(f"[ERROR][rank{rank}] {c.case}\n{err}")
+            if rank == 0:
+                c.log_path.write_text(err, encoding="utf-8")
+                logging.error(f"[ERROR] {c.case}\n{err}")
+            if dist.is_initialized():
+                dist.barrier()
 
     if dist.is_initialized():
         dist.barrier()
